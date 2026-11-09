@@ -43,4 +43,3 @@ services:
       - kafka
     environment:
       - QUARKUS_KAFKA_STREAMS_BOOTSTRAP_SERVERS=kafka:9092
-

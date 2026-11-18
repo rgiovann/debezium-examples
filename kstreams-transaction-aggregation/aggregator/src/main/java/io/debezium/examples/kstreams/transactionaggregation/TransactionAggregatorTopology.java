@@ -7,6 +7,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Predicate;
 import org.apache.kafka.streams.kstream.Repartitioned;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -63,7 +64,9 @@ public class TransactionAggregatorTopology {
                 .selectKey((key, value) -> extractTxId(value))
                 // process() does not trigger repartitioning automatically.
                 // Repartition by txID to ensure all messages from the same transaction are processed by the same task.
-                .repartition(Repartitioned.with(txIdSerde, inputValueSerde).withName(REPARTITION_TOPIC_NAME));
+                .repartition(Repartitioned.with(txIdSerde, inputValueSerde).withName(REPARTITION_TOPIC_NAME))
+                // aggregates each transaction's messages in the store and emits the transaction when it closes
+                .process(TransactionAggregator::new, OPEN_TRANSACTIONS_STORE_NAME);
 
         return builder.build();
     }
@@ -75,4 +78,10 @@ public class TransactionAggregatorTopology {
 
         return txIdLsn.substring(0, txIdLsn.indexOf(":"));
     }
+
+//    KStream<String, AggregatedTransaction> process(
+//            () -> new TransactionAggregator(),
+//    OPEN_TRANSACTIONS_STORE_NAME){
+//
+//    }
 }

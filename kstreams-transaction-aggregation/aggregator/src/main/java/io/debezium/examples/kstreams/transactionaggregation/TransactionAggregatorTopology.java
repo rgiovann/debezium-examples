@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 
 public class TransactionAggregatorTopology {
     private static final String REPARTITION_TOPIC_NAME = "transactions-by-id";
-    private static final String OPEN_TRANSACTIONS_STORE_NAME = "open-transactions";
+    static final String OPEN_TRANSACTIONS_STORE_NAME = "open-transactions";
 
     private final Pattern inputPattern;
     private final String outputTopic;
@@ -65,7 +65,7 @@ public class TransactionAggregatorTopology {
                 // process() does not trigger repartitioning automatically.
                 // Repartition by txID to ensure all messages from the same transaction are processed by the same task.
                 .repartition(Repartitioned.with(txIdSerde, inputValueSerde).withName(REPARTITION_TOPIC_NAME))
-                // aggregates each transaction's messages in the store and emits the transaction when it closes
+                // Aggregates each transaction's messages in the store and emits the transaction when it closes.
                 .process(TransactionAggregator::new, OPEN_TRANSACTIONS_STORE_NAME);
 
         return builder.build();

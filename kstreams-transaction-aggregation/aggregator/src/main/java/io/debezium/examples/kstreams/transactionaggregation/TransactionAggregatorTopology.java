@@ -9,12 +9,17 @@ import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.Predicate;
 import org.apache.kafka.streams.kstream.Repartitioned;
+import org.apache.kafka.streams.state.KeyValueStore;
+import org.apache.kafka.streams.state.StoreBuilder;
+import org.apache.kafka.streams.state.Stores;
 
 import java.util.Collections;
 import java.util.regex.Pattern;
 
 public class TransactionAggregatorTopology {
     private static final String REPARTITION_TOPIC_NAME = "transactions-by-id";
+    private static final String OPEN_TRANSACTIONS_STORE_NAME = "open-transactions";
+
     private final Pattern inputPattern;
     private final String outputTopic;
 
@@ -26,12 +31,23 @@ public class TransactionAggregatorTopology {
     public Topology build() {
         StreamsBuilder builder = new StreamsBuilder();
 
+        Serde<byte[]> inputKeySerde = Serdes.ByteArray();
+
         Serde<JsonNode> inputValueSerde = DebeziumSerdes.payloadJson(JsonNode.class);
         inputValueSerde.configure(Collections.emptyMap(), false);
 
-        Serde<byte[]> inputKeySerde = Serdes.ByteArray();
-
         Serde<String> txIdSerde = Serdes.String();
+
+        Serde<OpenTransaction> openTransactionSerde = DebeziumSerdes.payloadJson(OpenTransaction.class);
+        openTransactionSerde.configure(Collections.emptyMap(), false);
+
+        // Stores open transactions by txID until they are emitted.
+        StoreBuilder<KeyValueStore<String, OpenTransaction>> openTransactionsStoreBuilder =
+                Stores.keyValueStoreBuilder(Stores.persistentKeyValueStore(OPEN_TRANSACTIONS_STORE_NAME),
+                        txIdSerde,
+                        openTransactionSerde);
+
+        builder.addStateStore(openTransactionsStoreBuilder);
 
         Predicate<byte[], JsonNode> isPartOfTransaction = (key, value) ->
                 value.hasNonNull("status") || value.hasNonNull("transaction");

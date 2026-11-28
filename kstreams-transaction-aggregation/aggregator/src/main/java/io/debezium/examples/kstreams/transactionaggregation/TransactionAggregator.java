@@ -6,7 +6,9 @@ import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
 import org.apache.kafka.streams.state.KeyValueStore;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 class TransactionAggregator extends ContextualProcessor<String, JsonNode, String, AggregatedTransaction> {
@@ -23,8 +25,9 @@ class TransactionAggregator extends ContextualProcessor<String, JsonNode, String
     public void process(Record<String, JsonNode> record) {
         String txId = record.key();
         JsonNode value = record.value();
+        String status = value.path("status").asText();
 
-        if (value.hasNonNull("status")) {
+        if ("BEGIN".equals(status)) {
             return;
         }
 
@@ -37,7 +40,10 @@ class TransactionAggregator extends ContextualProcessor<String, JsonNode, String
                     extractTsMs(value));
         }
 
-        openTransactions.put(txId, applyDataEvent(current, value));
+        openTransactions.put(txId,
+                "END".equals(status)
+                        ? applyEnd(current, value)
+                        : applyDataEvent(current, value));
     }
 
     private static AggregatedEvent toAggregatedEvent(JsonNode dataEvent) {
@@ -48,8 +54,23 @@ class TransactionAggregator extends ContextualProcessor<String, JsonNode, String
         String op = dataEvent.get("op").asText();
         JsonNode before = dataEvent.get("before");
         JsonNode after = dataEvent.get("after");
-
         return new AggregatedEvent(table, op, before, after);
+    }
+
+    private static List<DataCollectionItem> toDataCollections(JsonNode dataCollections) {
+        List<DataCollectionItem> dataCollectionList = new ArrayList<>();
+        for (JsonNode item : dataCollections) {
+            dataCollectionList.add(new DataCollectionItem(item.get("data_collection").asText(),
+                    item.get("event_count").asLong()));
+        }
+        return dataCollectionList;
+    }
+
+    private static OpenTransaction applyEnd(OpenTransaction current, JsonNode end) {
+        return new OpenTransaction(current.events(),
+                end.get("event_count").asLong(),
+                toDataCollections(end.get("data_collections")),
+                current.tsMs());
     }
 
     private static OpenTransaction applyDataEvent(OpenTransaction current, JsonNode dataEvent) {

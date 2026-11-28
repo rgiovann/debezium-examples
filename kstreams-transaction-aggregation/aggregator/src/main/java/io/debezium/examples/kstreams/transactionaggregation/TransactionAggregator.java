@@ -6,9 +6,7 @@ import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
 import org.apache.kafka.streams.state.KeyValueStore;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 class TransactionAggregator extends ContextualProcessor<String, JsonNode, String, AggregatedTransaction> {
@@ -30,31 +28,16 @@ class TransactionAggregator extends ContextualProcessor<String, JsonNode, String
             return;
         }
 
-        AggregatedEvent event = toAggregatedEvent(value);
-
-        long totalOrder = value.get("transaction").get("total_order").asLong();
-
         OpenTransaction current = openTransactions.get(txId);
 
-        Map<Long, AggregatedEvent> events;
-        Long expectedEventCount;
-        List<DataCollectionItem> dataCollections;
-        long tsMs;
         if (current == null) {
-            events = new HashMap<>();
-            expectedEventCount = null;
-            dataCollections = null;
-            tsMs = value.get("source").get("ts_ms").asLong();
-        } else {
-            events = new HashMap<>(current.events());
-            expectedEventCount = current.expectedEventCount();
-            dataCollections = current.dataCollections();
-            tsMs = current.tsMs();
+            current = new OpenTransaction(new HashMap<>(),
+                    null,
+                    null,
+                    extractTsMs(value));
         }
 
-        events.put(totalOrder, event);
-
-        openTransactions.put(txId, new OpenTransaction(events, expectedEventCount, dataCollections, tsMs));
+        openTransactions.put(txId, applyDataEvent(current, value));
     }
 
     private static AggregatedEvent toAggregatedEvent(JsonNode dataEvent) {
@@ -69,4 +52,20 @@ class TransactionAggregator extends ContextualProcessor<String, JsonNode, String
         return new AggregatedEvent(table, op, before, after);
     }
 
+    private static OpenTransaction applyDataEvent(OpenTransaction current, JsonNode dataEvent) {
+        AggregatedEvent event = toAggregatedEvent(dataEvent);
+        long totalOrder = dataEvent.get("transaction").get("total_order").asLong();
+        Map<Long, AggregatedEvent> events = new HashMap<>(current.events());
+        events.put(totalOrder, event);
+        return new OpenTransaction(events,
+                current.expectedEventCount(),
+                current.dataCollections(),
+                current.tsMs());
+    }
+
+    private static long extractTsMs(JsonNode message) {
+        return message.hasNonNull("status")
+                ? message.get("ts_ms").asLong()
+                : message.get("source").get("ts_ms").asLong();
+    }
 }
